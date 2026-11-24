@@ -1,1 +1,8 @@
 frontend/bun.lock
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfplan
+.env
+.env.*

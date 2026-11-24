@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 from flask import Flask, request, Response
 import datetime
@@ -7,10 +8,44 @@ import sqlalchemy
 
 from connect_connector_auto_iam_authn import connect_with_connector_auto_iam_authn
 from connect_unix import connect_unix_socket
+from google.cloud import logging as gcloud_logging
 
 app = Flask(__name__)
 
-logger = logging.getLogger()
+logger = logging.getLogger("flask-app-log")
+logger.setLevel(logging.INFO)
+
+logging_client = gcloud_logging.Client()
+logging_client.setup_logging()
+
+
+def log_error(message: str):
+    logger.error(message)
+
+
+@app.errorhandler(500)
+def internal_error(e):
+    log_error(f"Internal server error at {request.path}: {e}")
+    return {"error": "Internal server error"}, 500
+
+
+@app.route("/health")
+def health():
+    return {"status": "ok"}, 200
+
+
+@app.before_request
+def log_questions_request():
+    if request.path == "/questions":
+        logger.info(
+            "Questions endpoint request",
+            extra={
+                "json_fields": {
+                    "endpoint": request.path,
+                    "method": request.method
+                }
+            }
+        )
 
 
 def init_connection_pool() -> sqlalchemy.engine.base.Engine:
@@ -62,6 +97,10 @@ db = None
 def init_db() -> sqlalchemy.engine.base.Engine:
     """Initiates connection to database and its' structure."""
     global db
+
+    if request.path == "/health":
+        return
+
     if db is None:
         db = init_connection_pool()
         migrate_db(db)
@@ -98,15 +137,15 @@ def get_questions() -> Response:
 
 
 def save_question(db: sqlalchemy.engine.base.Engine, question: str, answer1: str, answer2: str, answer3: str, answer4: str, correct_answer: int) -> Response:
-    """Saves a single question into the database.
+    """Saves a single question to the database.
 
     Args:
         db: Connection to the database.
         question: The question to be saved.
-        answer1: The first answer to the question.
-        answer2: The second answer to the question.
-        answer3: The third answer to the question.
-        answer4: The fourth answer to the question.
+        answer1: The first answer to be saved.
+        answer2: The second answer to be saved.
+        answer3: The third answer to be saved.
+        answer4: The fourth answer to be saved.
         correct_answer: The index of the correct answer.
 
     Returns:
@@ -145,4 +184,4 @@ def save_question(db: sqlalchemy.engine.base.Engine, question: str, answer1: str
 
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=8080, debug=True)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
